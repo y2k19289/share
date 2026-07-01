@@ -1,0 +1,15 @@
+{
+  "mappings": [
+    {
+      "rds_secret_name": "rds-sample-source",
+      "target_secretsmanager_secret": "app-sample-target-dev",
+      "target_secret_key_path": "database.password",
+      "k8s": {
+        "namespace": "default",
+        "secret_name": "app-target-secret",
+        "secret_key": "database-password",
+        "restart_label_selector": "app=my-app"
+      }
+    }
+  ]
+}

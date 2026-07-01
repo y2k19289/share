@@ -1,0 +1,5 @@
+aws_region         = "us-east-1"
+function_name      = "delivery-update-eks-secrets"
+lambda_role_name   = "delivery_update_eks_secrets_role"
+source_secret_name = "rds-sample-source"
+target_secret_name = "app-sample-target-dev"
