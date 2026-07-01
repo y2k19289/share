@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import logging
+import hashlib
 from typing import Any, Dict
 
 import boto3
@@ -60,6 +61,20 @@ def set_nested(d: Dict[str, Any], path: str, value: Any) -> None:
     cur[parts[-1]] = value
 
 
+def get_nested(d: Dict[str, Any], path: str, default=None):
+    cur = d
+    for p in path.split("."):
+        if not isinstance(cur, dict) or p not in cur:
+            return default
+        cur = cur[p]
+    return cur
+
+
+def _build_secret_token(secret_string: str) -> str:
+    # Deterministic token makes repeated writes with identical payload idempotent.
+    return hashlib.sha256(secret_string.encode("utf-8")).hexdigest()
+
+
 def update_secretsmanager_target(target_secret_name: str, key_path: str, new_password: str):
     try:
         resp = SECRETS_CLIENT.get_secret_value(SecretId=target_secret_name)
@@ -74,16 +89,54 @@ def update_secretsmanager_target(target_secret_name: str, key_path: str, new_pas
         secret_obj = {}
 
     if key_path in {"", None}:
+        current_value = secret_obj.get("value") if isinstance(secret_obj, dict) else None
+        if current_value == new_password:
+            LOG.info("Secret %s already has desired plaintext value; skipping write", target_secret_name)
+            return
+
         secret_obj = {"value": new_password}
-        SECRETS_CLIENT.put_secret_value(SecretId=target_secret_name, SecretString=json.dumps(secret_obj))
+        payload = json.dumps(secret_obj, separators=(",", ":"), sort_keys=True)
+        token = _build_secret_token(payload)
+        try:
+            SECRETS_CLIENT.put_secret_value(
+                SecretId=target_secret_name,
+                SecretString=payload,
+                ClientRequestToken=token,
+            )
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "LimitExceededException":
+                latest = get_secret_value(target_secret_name)
+                latest_value = latest.get("value") if isinstance(latest, dict) else None
+                if latest_value == new_password:
+                    LOG.info("Secret %s already updated by another invocation", target_secret_name)
+                    return
+            raise
         LOG.info("Updated secret %s with plaintext value", target_secret_name)
         return
 
     if not isinstance(secret_obj, dict):
         secret_obj = {}
 
+    if get_nested(secret_obj, key_path) == new_password:
+        LOG.info("Secret %s key %s already has desired value; skipping write", target_secret_name, key_path)
+        return
+
     set_nested(secret_obj, key_path, new_password)
-    SECRETS_CLIENT.put_secret_value(SecretId=target_secret_name, SecretString=json.dumps(secret_obj))
+    payload = json.dumps(secret_obj, separators=(",", ":"), sort_keys=True)
+    token = _build_secret_token(payload)
+    try:
+        SECRETS_CLIENT.put_secret_value(
+            SecretId=target_secret_name,
+            SecretString=payload,
+            ClientRequestToken=token,
+        )
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "LimitExceededException":
+            latest = get_secret_value(target_secret_name)
+            if get_nested(latest, key_path) == new_password:
+                LOG.info("Secret %s key %s already updated by another invocation", target_secret_name, key_path)
+                return
+        raise
     LOG.info("Updated secret %s key %s", target_secret_name, key_path)
 
 
@@ -129,8 +182,8 @@ def restart_pods(namespace: str, label_selector: str):
 
 def find_mapping_for_rds_secret(secret_id: str, mappings: Dict[str, Any]):
     for m in mappings.get("mappings", []):
-        candidates = [m.get("rds_secret_name"), m.get("target_secretsmanager_secret")]
-        if any(candidate and (candidate == secret_id or candidate in secret_id) for candidate in candidates):
+        source_name = m.get("rds_secret_name")
+        if source_name and (source_name == secret_id or source_name in secret_id):
             return m
     return None
 

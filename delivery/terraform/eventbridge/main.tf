@@ -7,7 +7,7 @@ resource "aws_cloudwatch_event_rule" "secret_update_rule" {
     "detail-type" = ["AWS API Call via CloudTrail"]
     detail = {
       eventSource = ["secretsmanager.amazonaws.com"]
-      eventName   = ["PutSecretValue"]
+      eventName   = ["PutSecretValue", "UpdateSecret"]
     }
   })
 }
