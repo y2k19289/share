@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "cloudtrail_bucket" {
-  bucket = "delivery-cloudtrail-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  bucket = "cloudtrail-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
   acl    = "private"
 
   versioning {
@@ -56,7 +56,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_bucket_policy" {
 }
 
 resource "aws_cloudtrail" "secrets_trail" {
-  name                          = "delivery-secrets-manager-trail"
+  name                          = "secrets-manager-trail"
   s3_bucket_name                = aws_s3_bucket.cloudtrail_bucket.id
   include_global_service_events = false
   is_multi_region_trail         = false

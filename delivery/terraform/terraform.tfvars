@@ -1,5 +1,5 @@
 aws_region         = "us-east-1"
-function_name      = "delivery-update-eks-secrets"
-lambda_role_name   = "delivery_update_eks_secrets_role"
+function_name      = "delivery-update-eks-secrets_new"
+lambda_role_name   = "delivery_update_eks_secrets_role_new"
 source_secret_name = "rds-sample-source"
-target_secret_name = "app-sample-target-dev-v2-20260701"
+target_secret_name = "target-secret-6-july"

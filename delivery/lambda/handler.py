@@ -70,6 +70,30 @@ def get_nested(d: Dict[str, Any], path: str, default=None):
     return cur
 
 
+def delete_nested(d: Dict[str, Any], path: str) -> None:
+    parts = path.split(".")
+    cur = d
+    chain = []
+    for p in parts[:-1]:
+        if not isinstance(cur, dict) or p not in cur:
+            return
+        chain.append((cur, p))
+        cur = cur[p]
+
+    if not isinstance(cur, dict) or parts[-1] not in cur:
+        return
+
+    del cur[parts[-1]]
+
+    # Remove empty parent objects left behind after deleting the nested leaf.
+    for parent, key in reversed(chain):
+        child = parent.get(key)
+        if isinstance(child, dict) and not child:
+            del parent[key]
+        else:
+            break
+
+
 def _build_secret_token(secret_string: str) -> str:
     # Deterministic token makes repeated writes with identical payload idempotent.
     return hashlib.sha256(secret_string.encode("utf-8")).hexdigest()
@@ -84,9 +108,15 @@ def update_secretsmanager_target(target_secret_name: str, key_path: str, new_pas
 
     if "SecretString" in resp:
         secret_str = resp["SecretString"]
-        secret_obj = json.loads(secret_str) if _is_json(secret_str) else {"value": secret_str}
+        if not _is_json(secret_str):
+            raise ValueError(
+                f"Target secret {target_secret_name} must be a JSON object when target_secret_key_path is configured"
+            )
+        secret_obj = json.loads(secret_str)
     else:
-        secret_obj = {}
+        raise ValueError(
+            f"Target secret {target_secret_name} must store a JSON object when target_secret_key_path is configured"
+        )
 
     if key_path in {"", None}:
         current_value = secret_obj.get("value") if isinstance(secret_obj, dict) else None
@@ -117,11 +147,18 @@ def update_secretsmanager_target(target_secret_name: str, key_path: str, new_pas
     if not isinstance(secret_obj, dict):
         secret_obj = {}
 
-    if get_nested(secret_obj, key_path) == new_password:
+    # Prefer a direct key update (including dotted keys) so the secret stays
+    # compatible with Secrets Manager key/value mode.
+    if secret_obj.get(key_path) == new_password:
         LOG.info("Secret %s key %s already has desired value; skipping write", target_secret_name, key_path)
         return
 
-    set_nested(secret_obj, key_path, new_password)
+    secret_obj[key_path] = new_password
+
+    # Cleanup from older behavior that created nested objects for dotted keys.
+    if "." in key_path:
+        delete_nested(secret_obj, key_path)
+
     payload = json.dumps(secret_obj, separators=(",", ":"), sort_keys=True)
     token = _build_secret_token(payload)
     try:
@@ -133,7 +170,7 @@ def update_secretsmanager_target(target_secret_name: str, key_path: str, new_pas
     except ClientError as e:
         if e.response.get("Error", {}).get("Code") == "LimitExceededException":
             latest = get_secret_value(target_secret_name)
-            if get_nested(latest, key_path) == new_password:
+            if isinstance(latest, dict) and latest.get(key_path) == new_password:
                 LOG.info("Secret %s key %s already updated by another invocation", target_secret_name, key_path)
                 return
         raise

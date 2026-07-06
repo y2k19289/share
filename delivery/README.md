@@ -37,6 +37,7 @@ This delivery folder contains a stand-alone AWS Lambda + Terraform deployment fo
 - The Lambda reads `MAPPINGS_FILE` from environment variables and loads `mappings.json` from the package root.
 - The Terraform package includes `handler.py` and `mappings.json` from the parent directory.
 - The delivery package assumes the client will provide actual secret names and passwords in `terraform.tfvars`.
+- When `target_secret_key_path` is set, the target Secrets Manager secret must already store a JSON key/value object. The Lambda updates the nested key in that JSON payload and will reject plaintext target secrets.
 
 ## Testing
 

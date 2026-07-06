@@ -2,8 +2,8 @@
   "mappings": [
     {
       "rds_secret_name": "rds-sample-source",
-      "target_secretsmanager_secret": "app-sample-target-dev-v2-20260701",
-      "target_secret_key_path": "database.password",
+      "target_secretsmanager_secret": "target-secret-6-july",
+      "target_secret_key_path": "utilization.db.password",
       "k8s": {
         "namespace": "default",
         "secret_name": "app-target-secret",
